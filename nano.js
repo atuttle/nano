@@ -323,7 +323,7 @@ module.exports = exports = nano = function database_module(cfg) {
              , "errid"       : "non_200"
              , "message"     : parsed.reason || "couch returned "+status_code
              }), callback);
-          return fallback(stream, opts, callback);
+          return stream;
         }
       });
       return stream;
