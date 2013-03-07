@@ -280,25 +280,7 @@ module.exports = exports = nano = function database_module(cfg) {
 
         if(e) {
           if (e.code && /ETIMEDOUT|ECONNREFUSED/.test(e.code)){
-            // console.log('\ntimeout detected----------------');
-            cfg.sick = cfg.sick || [];
-            cfg.sick.push({
-              url: cfg.url
-              ,thermometer: { method  : "GET"
-                            , timeout : 1000*30
-                            , uri     : u.resolve(u.resolve(cfg.url, opts.db + '/'), cfg.updoc)
-                            , headers : {"content-type": "application/json"
-                                        , "accept"     : "application/json"
-                                        }
-                            }
-            });
-            if (cfg.sick.length === 1){//only initiate if it's not already running
-              tend_sick();
-            }
-            if (cfg.fallback.length > 0) {
-              cfg.url = cfg.fallback.shift();
-              return relax.call(nano, opts, callback);
-            }
+            return fallback(stream, opts, callback);
           }
           log({err: 'socket', body: b, headers: rh });
           errs.handle(errs.merge(e,
@@ -341,7 +323,7 @@ module.exports = exports = nano = function database_module(cfg) {
              , "errid"       : "non_200"
              , "message"     : parsed.reason || "couch returned "+status_code
              }), callback);
-          return stream;
+          return fallback(stream, opts, callback);
         }
       });
       return stream;
@@ -354,10 +336,36 @@ module.exports = exports = nano = function database_module(cfg) {
     }
   }
 
+  function fallback(stream, opts, callback){
+    cfg.sick = cfg.sick || [];
+    var tmp = u.resolve(cfg.url, opts.db + '/');
+    tmp = u.resolve(tmp, ''+cfg.updoc);
+    cfg.sick.push({
+      url: cfg.url
+      ,thermometer: { method  : "GET"
+                    , timeout : 1000*30
+                    , uri     : tmp
+                    , headers : {"content-type": "application/json"
+                                , "accept"     : "application/json"
+                                }
+                    }
+    });
+    if (cfg.sick.length === 1){//only initiate if it's not already running
+      tend_sick();
+    }
+    //as long as there are more fallbacks that could be online, keep trying!
+    if (cfg.fallback.length > 0) {
+      cfg.url = cfg.fallback.shift();
+      return relax.call(nano, opts, callback);
+    }else{
+      return stream;
+    }
+  }
   function tend_sick(){
+    console.log('initializing database recovery hospital...');
     pulse = setInterval(function(){
-      // console.log('tending sick...');
-      // console.log('current fallback list: ', cfg.fallback );
+      console.log('tending sick...');
+      console.log('current fallback list: ', cfg.fallback );
       // console.log('\n\ncurrent sick list: ', cfg.sick );
       cfg.sick.forEach(function(el, ix, list){
         var stream = request(el.thermometer, function(e,h,b){
@@ -373,10 +381,12 @@ module.exports = exports = nano = function database_module(cfg) {
             if (cfg.sick.length === 0){
               clearInterval(pulse);
             }
+          }else{
+            console.log('...'+el.thermometer.uri.slice(-29) + ' => ' + h.statusCode);
           }
         });
       });
-    }, 1000*60*5);
+    }, 1000*6);
   }
 
  /***************************************************************************
@@ -1048,6 +1058,9 @@ module.exports = exports = nano = function database_module(cfg) {
   if (Array.isArray(cfg.url)){
     cfg.fallback = cfg.url;
     cfg.url = cfg.fallback.shift();
+  }
+  if (!cfg.hasOwnProperty('updoc')){
+    cfg.updoc = 'up';
   }
 
   // alias so config is public in nano once set
