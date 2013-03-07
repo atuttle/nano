@@ -51,6 +51,7 @@ module.exports = exports = nano = function database_module(cfg) {
     , db
     , auth
     , port
+    , pulse
     ;
 
  /***************************************************************************
@@ -249,7 +250,7 @@ module.exports = exports = nano = function database_module(cfg) {
 
     // if its a form make sure content type is set apropriately
     if(opts.form) {
-      req.headers['content-type'] = 
+      req.headers['content-type'] =
         'application/x-www-form-urlencoded; charset=utf-8';
       req.body = qs.stringify(opts.form).toString('utf8');
     }
@@ -278,6 +279,27 @@ module.exports = exports = nano = function database_module(cfg) {
         rh.uri            = req.uri;
 
         if(e) {
+          if (e.code && /ETIMEDOUT|ECONNREFUSED/.test(e.code)){
+            // console.log('\ntimeout detected----------------');
+            cfg.sick = cfg.sick || [];
+            cfg.sick.push({
+              url: cfg.url
+              ,thermometer: { method  : "GET"
+                            , timeout : 1000*30
+                            , uri     : u.resolve(u.resolve(cfg.url, opts.db + '/'), cfg.updoc)
+                            , headers : {"content-type": "application/json"
+                                        , "accept"     : "application/json"
+                                        }
+                            }
+            });
+            if (cfg.sick.length === 1){//only initiate if it's not already running
+              tend_sick();
+            }
+            if (cfg.fallback.length > 0) {
+              cfg.url = cfg.fallback.shift();
+              return relax.call(nano, opts, callback);
+            }
+          }
           log({err: 'socket', body: b, headers: rh });
           errs.handle(errs.merge(e,
              { "message": "error happened in your connection"
@@ -332,6 +354,31 @@ module.exports = exports = nano = function database_module(cfg) {
     }
   }
 
+  function tend_sick(){
+    pulse = setInterval(function(){
+      // console.log('tending sick...');
+      // console.log('current fallback list: ', cfg.fallback );
+      // console.log('\n\ncurrent sick list: ', cfg.sick );
+      cfg.sick.forEach(function(el, ix, list){
+        var stream = request(el.thermometer, function(e,h,b){
+          if (e) {
+            console.log(e);
+            return;
+          }
+          // console.log('%s ::: %s', el.thermometer.uri.slice(-29), h.statusCode);
+          if (h.statusCode === 200){
+            cfg.fallback.push(el.url);
+            cfg.sick.splice(ix,1);
+            console.log('returning healed db to work: %s', el.url.slice(-29));
+            if (cfg.sick.length === 0){
+              clearInterval(pulse);
+            }
+          }
+        });
+      });
+    }, 1000*60*5);
+  }
+
  /***************************************************************************
   * auth                                                                    *
   ***************************************************************************/
@@ -340,15 +387,15 @@ module.exports = exports = nano = function database_module(cfg) {
    *
    * e.g.
    * nano.auth(username, password, function (err, body, headers) {
-   *   if (err) { 
+   *   if (err) {
    *     return console.log("oh noes!")
    *   }
-   * 
+   *
    *   if (headers && headers['set-cookie']) {
    *     console.log("cookie monster likes " + headers['set-cookie']);
    *   }
    * });
-   * 
+   *
    * @param {username:string} username
    * @param {password:string} password
    *
@@ -689,12 +736,12 @@ module.exports = exports = nano = function database_module(cfg) {
       }
       var params =
         { db: db_name, doc: doc_src, method: "COPY"
-        , headers: { "Destination": doc_dest } 
+        , headers: { "Destination": doc_dest }
         };
       if(opts.overwrite) {
         return head_doc(doc_dest, function (e,b,h) {
           if (typeof h.etag === "string") {
-            params.headers.Destination += "?rev=" + 
+            params.headers.Destination += "?rev=" +
               h.etag.substring(1, h.etag.length - 1);
           }
           return relax(params, callback);
@@ -727,7 +774,7 @@ module.exports = exports = nano = function database_module(cfg) {
     * [1]: http://wiki.apache.org/couchdb/HTTP_Bulk_Document_API
     *
     * @param {doc_names:object} document keys as per the couchdb api[1]
-    * @param {params:object} additions to the querystring, note 
+    * @param {params:object} additions to the querystring, note
     * that include_docs is always set to true
     *
     * @see get_doc
@@ -984,6 +1031,11 @@ module.exports = exports = nano = function database_module(cfg) {
       }
     }
   }
+  // adam:
+  else if (Array.isArray(cfg)) {
+    //an array of database server urls in order of preference
+    cfg = {url: cfg.shift(), fallback: cfg};
+  }
 
   if(!(cfg && cfg.url)) {
     throw errs.create(
@@ -991,6 +1043,11 @@ module.exports = exports = nano = function database_module(cfg) {
         , "message"     : "no configuration with a valid url was given"
         , "errid"       : "bad_url"
         });
+  }
+
+  if (Array.isArray(cfg.url)){
+    cfg.fallback = cfg.url;
+    cfg.url = cfg.fallback.shift();
   }
 
   // alias so config is public in nano once set
