@@ -30,23 +30,24 @@
   , "Gregory T. Corrigan (https://github.com/corrigang)"
   , "Etienne Folio (https://github.com/Ornthalas)"
   , "John Chesley (http://chesl.es)"
+  , "Adam Tuttle (https://github.com/atuttle)"
   ]
-, "keywords"        : 
+, "keywords"        :
   ["couchdb", "data", "request", "json", "nosql", "micro", "nano", "database"]
-, "dependencies"    : 
+, "dependencies"    :
   { "request"       : "2.12.x"
   , "follow"        : "0.8.x"
   , "errs"          : "0.2.x"
   , "extend"        : "1.1.x"
   }
-, "devDependencies" : 
+, "devDependencies" :
   { "async"         : "0.1.x"
   , "specify"       : "1.1.x"
   , "nock"          : "0.14.x"
   }
-, "scripts"         : 
+, "scripts"         :
   { "test"          : "node node_modules/specify/bin/specify -e NOCK=on"
-  , "compact"       : 
+  , "compact"       :
     "node node_modules/specify/bin/specify -e NOCK=on -r compact"
   , "nock_off"      : "node node_modules/specify/bin/specify"
   }
