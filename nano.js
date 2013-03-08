@@ -52,6 +52,7 @@ module.exports = exports = nano = function database_module(cfg) {
     , auth
     , port
     , pulse
+    , fallback_when = /ETIMEDOUT|ECONNREFUSED/
     ;
 
  /***************************************************************************
@@ -279,7 +280,7 @@ module.exports = exports = nano = function database_module(cfg) {
         rh.uri            = req.uri;
 
         if(e) {
-          if (e.code && /ETIMEDOUT|ECONNREFUSED/.test(e.code)){
+          if (e.code && fallback_when.test(e.code)){
             return fallback(stream, opts, callback);
           }
           log({err: 'socket', body: b, headers: rh });
@@ -340,6 +341,7 @@ module.exports = exports = nano = function database_module(cfg) {
     cfg.sick = cfg.sick || [];
     var tmp = u.resolve(cfg.url, opts.db + '/');
     tmp = u.resolve(tmp, ''+cfg.updoc);
+    console.log('[nano][sick ward] db appears sick, sending to sick ward: ', u.parse(tmp).host);
     cfg.sick.push({
       url: cfg.url
       ,thermometer: { method  : "GET"
@@ -356,37 +358,38 @@ module.exports = exports = nano = function database_module(cfg) {
     //as long as there are more fallbacks that could be online, keep trying!
     if (cfg.fallback.length > 0) {
       cfg.url = cfg.fallback.shift();
+      console.log('[nano] falling back to: ', u.parse(cfg.url).host);
       return relax.call(nano, opts, callback);
     }else{
       return stream;
     }
   }
   function tend_sick(){
-    console.log('initializing database recovery hospital...');
+    console.log('[nano][sick ward] initializing sick ward...');
     pulse = setInterval(function(){
-      console.log('tending sick...');
-      console.log('current fallback list: ', cfg.fallback );
-      // console.log('\n\ncurrent sick list: ', cfg.sick );
+      console.log('[nano][sick ward] checking patients...');
+      // console.log('[nano] current fallback list: ', cfg.fallback );
+      // console.log('[nano] current sick list: ', cfg.sick );
       cfg.sick.forEach(function(el, ix, list){
         var stream = request(el.thermometer, function(e,h,b){
-          if (e) {
-            console.log(e);
-            return;
-          }
-          // console.log('%s ::: %s', el.thermometer.uri.slice(-29), h.statusCode);
+          if (e && !fallback_when.test(e.code)) return console.log(e);
+          var host = u.parse(el.thermometer.uri).host;
+          if (e) return console.log('[nano][sick ward] %s :: %s', host, e.code);
+          else console.log('[nano][sick ward] %s ::: %s', host, h.statusCode);
           if (h.statusCode === 200){
             cfg.fallback.push(el.url);
             cfg.sick.splice(ix,1);
-            console.log('returning healed db to work: %s', el.url.slice(-29));
-            if (cfg.sick.length === 0){
+            console.log('[nano][sick ward] healed and reporting for duty: %s', host);
+            if (cfg.sick.length === 0) {
+              console.log('[nano][sick ward] all patients healed; closing up shop!');
               clearInterval(pulse);
             }
           }else{
-            console.log('...'+el.thermometer.uri.slice(-29) + ' => ' + h.statusCode);
+            // console.log('...'+el.thermometer.uri.slice(-30) + ' => ' + h.statusCode);
           }
         });
       });
-    }, 1000*6);
+    }, 1000*60*5);
   }
 
  /***************************************************************************
