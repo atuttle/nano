@@ -183,6 +183,35 @@ var db = require('nano')(
   });
 ```
 
+### automatic fail-over and healing
+
+nano supports automatic fail-over when a database goes offline or requests time out. just pass an array of URLs
+and the document id of a document available on all instances:
+
+``` js
+var nano = require('nano')({
+  url: ['http://localhost:5984', 'https://user:pass@you.cloudant.com', 'http://user:pass@you.iriscouch.com']
+  ,updoc: 'up'
+});
+```
+
+the `updoc` is used to verify when a db comes back online after downtime. nano requests the `updoc` once every
+5 minutes, and when it finally receives a 200 status code, the db instance is added back to the queue.
+
+nano also tries hard not to let any requests fail because of a down db: if a request times out or is refused,
+the next server is tried, repeating until a db server works or the entire db queue has been exhausted.
+
+_automatic fail-over is not supported during pipe requests._
+
+this feature works well with an explicit request timeout:
+
+``` js
+var nano = require('nano')({
+  url: [ process.env.DB_URL_1, process.env.DB_URL_2, ... ]
+  ,updoc: 'up'
+  ,request_defaults: { timeout: 30000 } //30 seconds
+});
+```
 
 ## database functions
 
